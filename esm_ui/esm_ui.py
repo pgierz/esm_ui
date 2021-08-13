@@ -8,9 +8,39 @@ from git import Repo
 # TODO(PG): Maybe convert to dataclass?
 # See here: https://www.python.org/dev/peps/pep-0557/
 class Project:
-    """Representation of an entire scientific project"""
 
     def __init__(self, name, models=None, hpc_system=None, project_base=None, description=None):
+    """
+    This is a representation of an entire scientific project.
+
+    You should specify the following (mandatory) arugments. You may also
+    specify the optional arguments, which are marked as "optional":
+
+    Parameters
+    ----------
+    name : str
+        The name of the project. This should probably closely correlate to the
+        name of the paper you intent to publish afterwards, or a keyword which
+        you easily understand.
+    models : list of str or Model (optional)
+        A list of models you intend to use. This can either be a list of
+        strings specifiying model names, or a list of Model objects. Strings of
+        this list will be automatically converted into Model objects for you.
+    hpc_system : str or HPCSystem (optional)
+        The High Perfomance Computer used for this particular project. This can
+        be passed in as a string descirbing the hpc's fully qualified domain
+        name (fqdn), so, for example "ollie0.awi.de", or, alternatively, an
+        already initializied HPCSystem object.
+    project_base : str or pathlib.Path (optional if not specified in your user config)
+        This describes where the project is located on the machine, and
+        should point to a directory which you want to use, either as a
+        pathlib.Path object, or as a string which can be converted to a
+        Path.
+    description : str (optional, but probably should be required)
+        A long form description of what this project is about. If unset,
+        defaults to an empty string, but you really should describe what you
+        are trying to do with your science.
+    """
         # Some basic information. What is this project, where is it, what is it
         # about
         self.name = name
@@ -19,7 +49,7 @@ class Project:
             project_base or f"/work/ollie/pgierz/projects/PalModII/{self.name}"
         )
         self.hpc_system = HPCSystem(hpc_system) or HPCSystem(socket.getfqdn())  # "ollie0.awi.de"
-        self.description = description
+        self.description = description or ""
 
         # Some information regarding which models are being used
         self.models = [models]  # List, since maybe one or more models are
