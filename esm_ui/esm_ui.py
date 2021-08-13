@@ -61,6 +61,8 @@ class Project:
         self._mkdir_in_project_base("boundary_conditions")
         self._mkdir_in_project_base("nonstandard_pool_files") if self.using_internal_pool
 
+    # This should probably go into the init. Anyone who isn't using git for
+    # their project is a dumbass.
     def _git_init(self):
         self.repo = Repo.init(self.project_base)
 
@@ -74,14 +76,14 @@ class Project:
     def _get_models(self):
         for model in self.models:
             if self.using_internal_model_codes:
-                self.add_as_submodule(model.repo, f"model_codes/{model.name}")
+                self.add_as_submodule(model.name, f"model_codes/{model.name}", model.clone_url)
             else:
                 self.hpc_system.pool_locations[model.name].symlink_to(f"model_codes/{model.name}")
 
-    def add_as_submodule(self, repo, project_path):
+    def add_as_submodule(self, name, project_path, repo_or_url):
         # A rather useless wrapper function, for now. But maybe we can
         # auto-create the repo or something.
-        self.repo.submodule.add(repo, project_path)
+        self.repo.create_submodule(name=name, project_path, repo_or_url)
 
 
 
@@ -94,10 +96,15 @@ class Project:
 
 class Model:
     """Representation of a Climate Model"""
+    clone_url = "https://example.com"
 
 
 class ModelComponent:
     """One Component (could be a stand-alone Model)"""
+
+
+class ModelSetup:
+    """Representation of a coupled model setup"""
 
 
 class Experiment:
