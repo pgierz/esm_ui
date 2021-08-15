@@ -4,73 +4,80 @@ import pathlib
 import socket
 
 from git import Repo
+import panel as pn
+import param
+
 
 # TODO(PG): Maybe convert to dataclass?
 # See here: https://www.python.org/dev/peps/pep-0557/
-class Project:
-
-    def __init__(self, name, models=None, hpc_system=None, project_base=None, description=None):
+class Project(param.Paramerized):
     """
     This is a representation of an entire scientific project.
+    """
 
-    You should specify the following (mandatory) arugments. You may also
-    specify the optional arguments, which are marked as "optional":
-
-    Parameters
-    ----------
-    name : str
-        The name of the project. This should probably closely correlate to the
+    name = param.String(
+        allow_None=False,
+        doc="""The name of the project. This should probably closely correlate to the
         name of the paper you intent to publish afterwards, or a keyword which
-        you easily understand.
-    models : list of str or Model (optional)
-        A list of models you intend to use. This can either be a list of
-        strings specifiying model names, or a list of Model objects. Strings of
-        this list will be automatically converted into Model objects for you.
-    hpc_system : str or HPCSystem (optional)
-        The High Perfomance Computer used for this particular project. This can
-        be passed in as a string descirbing the hpc's fully qualified domain
-        name (fqdn), so, for example "ollie0.awi.de", or, alternatively, an
-        already initializied HPCSystem object.
-    project_base : str or pathlib.Path (optional if not specified in your user config)
-        This describes where the project is located on the machine, and
+        you easily understand.""",
+    )
+    project_base = param.FolderPath(
+        doc="""This describes where the project is located on the machine, and
         should point to a directory which you want to use, either as a
         pathlib.Path object, or as a string which can be converted to a
-        Path.
-    description : str (optional, but probably should be required)
-        A long form description of what this project is about. If unset,
+        Path.""",
+    )
+    models = param.ListSelector(
+        objects=["AWIESM-2.1", "AWIESM-2.2", "PISM-1.2"],
+        doc="""A list of models you intend to use. This can either be a list of
+        strings specifiying model names, or a list of Model objects. Strings of
+        this list will be automatically converted into Model objects for you. """,
+    )
+    experiments = param.List(doc="Which experiments are in this project")
+    using_internal_model_codes = param.Boolean(
+        default=True,
+        doc="Does this project include models from inside the project folder?",
+    )
+    using_internal_pool = param.Boolean(
+        default=True, doc="Does this project use pool files in the project folder?"
+    )
+    using_internal_bc_dir = param.Boolean(
+        default=True,
+        doc="Does this project use boundary condition sets from inside the project folder?",
+    )
+    hpc_system = param.Selector(
+        objects=["mistral.dkrz.de", "ollie.awi.de", socket.getfqdn()],
+        doc="""This describes where the project is located on the machine, and
+        should point to a directory which you want to use, either as a
+        pathlib.Path object, or as a string which can be converted to a
+        Path.""",
+    )
+    description = param.String(
+        doc="""A long form description of what this project is about. If unset,
         defaults to an empty string, but you really should describe what you
-        are trying to do with your science.
-    """
-        # Some basic information. What is this project, where is it, what is it
-        # about
-        self.name = name
-        # TODO(PG): The defaults should come from some sort of user config.
-        self.project_base = pathlib.Path(
-            project_base or f"/work/ollie/pgierz/projects/PalModII/{self.name}"
-        )
-        self.hpc_system = HPCSystem(hpc_system) or HPCSystem(socket.getfqdn())  # "ollie0.awi.de"
-        self.description = description or ""
-
-        # Some information regarding which models are being used
-        self.models = [models]  # List, since maybe one or more models are
-                                # being used.
-        self.experiments = []   # Empty list, the init routine should not
-                                # generate any experiments for you.
-
-        # Some things may be directly in the project, or they may come from
-        # elsewhere on the filesystem
-        # TODO(PG): Get this from the outside
-        self.using_internal_model_codes = True
-        self.using_internal_pool = True
-        self.using_internal_bc_dir = True
-
-        self.using_external_model_codes = not self.using_internal_model_codes
-        self.using_external_pool = not self.using_internal_pool
-        self.using_external_bc_dir = not self.using_internal_bc_dir
+        are trying to do with your science.""",
+    )
 
     def add_experiment(self, *args):
         for arg in args:
             self.experiments.append(arg)
+    
+    class WebUI(param.Paramerized):
+        pl = pn.pipeline.Pipeline()
+        pl.add_stage("Step 1: Project Metadata", ConfigureMetadata)
+
+        class ConfigureMetadata(pn.Paramerized):
+            name = Project.name
+            description = Project.description
+            ready = param.Boolean(default=False, precedence=-1)
+
+            @param.output(('Name', param.String), ('Description', param.String))
+            def output(self):
+                return self.name, self.description
+
+            def panel(self):
+                return self.param
+            
 
     def create(self):
         self._setup_directories()
@@ -89,7 +96,8 @@ class Project:
         self._mkdir_in_project_base("experiments")
         self._mkdir_in_project_base("model_codes")
         self._mkdir_in_project_base("boundary_conditions")
-        self._mkdir_in_project_base("nonstandard_pool_files") if self.using_internal_pool
+        if self.using_internal_pool:
+            self._mkdir_in_project_base("nonstandard_pool_files")
 
     # This should probably go into the init. Anyone who isn't using git for
     # their project is a dumbass.
@@ -106,16 +114,18 @@ class Project:
     def _get_models(self):
         for model in self.models:
             if self.using_internal_model_codes:
-                self.add_as_submodule(model.name, f"model_codes/{model.name}", model.clone_url)
+                self.add_as_submodule(
+                    model.name, f"model_codes/{model.name}", model.clone_url
+                )
             else:
-                self.hpc_system.pool_locations[model.name].symlink_to(f"model_codes/{model.name}")
+                self.hpc_system.pool_locations[model.name].symlink_to(
+                    f"model_codes/{model.name}"
+                )
 
     def add_as_submodule(self, name, project_path, repo_or_url):
         # A rather useless wrapper function, for now. But maybe we can
         # auto-create the repo or something.
-        self.repo.create_submodule(name=name, project_path, repo_or_url)
-
-
+        self.repo.create_submodule(name, project_path, repo_or_url)
 
     def _register_to_db(self):
         pass
@@ -126,6 +136,7 @@ class Project:
 
 class Model:
     """Representation of a Climate Model"""
+
     clone_url = "https://example.com"
 
 
@@ -152,5 +163,14 @@ class BoundaryConditionSet:
 class SWTool:
     """A software tool to be added to a project"""
 
+
 class HPCSystem:
     """Representation of a HPC System"""
+
+
+def main():
+    project = Project()
+    project.WebUI.pl.servable()
+
+#if __name__ == "__main__":
+main()
